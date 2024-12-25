@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Chen-Gui Tool</title>
+    <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+        h1 {
+            color: #1976d2;
+            font-weight: 300;
+            margin-bottom: 16px;
+        }
+        h2 {
+            color: #333;
+            font-weight: 400;
+            margin-bottom: 24px;
+        }
+        textarea {
+            width: 100%;
+            height: 120px;
+            margin-bottom: 24px;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: 'Roboto', sans-serif;
+            resize: vertical;
+            font-size: 16px;
+        }
+        button {
+            background-color: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        button:hover {
+            background-color: #1565c0;
+        }
+        button:active {
+            transform: translateY(2px);
+        }
+        #result {
+            margin-top: 32px;
+        }
+        .tool {
+            margin-bottom: 24px;
+            padding: 20px;
+            background-color: #e3f2fd;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .tool h3 {
+            margin-top: 0;
+            color: #1976d2;
+            font-weight: 500;
+        }
+        .loading {
+            display: none;
+            justify-content: center;
+            align-items: center;
+            margin-top: 24px;
+        }
+        .loading .material-icons {
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .markdown-content {
+            line-height: 1.6;
+        }
+        .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        .markdown-content h1 {
+            font-size: 2em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: .3em;
+        }
+        .markdown-content h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: .3em;
+        }
+        .markdown-content h3 {
+            font-size: 1.25em;
+        }
+        .markdown-content p {
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        .markdown-content ul, .markdown-content ol {
+            padding-left: 2em;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>The Chen-Gui Tool by Dr. Om J Lakhani</h1>
+            <h2>Your AI Clinical Assistant based on the Chain of Diagnosis</h2>
+            <p>Describe the patient's symptoms and relevant medical history:</p>
+            <textarea id="userInput" placeholder="e.g., 45-year-old male presenting with severe headache, nausea, and sensitivity to light for the past 24 hours. No history of migraines."></textarea>
+            <button onclick="askPerplexity()">Diagnose</button>
+            <div class="loading" id="loading">
+                <i class="material-icons">autorenew</i>
+                <span>Searching for the right answer...</span>
+            </div>
+            <div id="result"></div>
+        </div>
+    </div>
+
+    <script>
+        const PERPLEXITY_API_KEY = "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";
+        const API_URL = "https://api.perplexity.ai/chat/completions";
+
+        async function askPerplexity() {
+            const userInput = document.getElementById('userInput').value;
+            const resultDiv = document.getElementById('result');
+            const loadingDiv = document.getElementById('loading');
+
+            if (!userInput.trim()) {
+                alert("Please enter a task description.");
+                return;
+            }
+
+            resultDiv.innerHTML = '';
+            loadingDiv.style.display = 'flex';
+
+            try {
+                const response = await generatePerplexityResponse(userInput);
+                loadingDiv.style.display = 'none';
+                displayResults(response);
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                resultDiv.innerHTML = '<p style="color: #d32f2f;">Error: Unable to get a response. Please try again.</p>';
+                console.error('Error:', error);
+            }
+        }
+
+        async function generatePerplexityResponse(userInput) {
+            const systemMessage = `You are an AI-powered medical assistant designed to help physicians diagnose patients by asking relevant questions and providing transparent reasoning for your diagnosis. You will analyze the patient's symptoms step-by-step, request additional information if needed, and provide a confidence-driven diagnosis based on your reasoning process.
+
+When presented with a patient's symptoms, follow these steps:
+
+1. Symptom Abstraction: Analyze the patient's explicit symptoms. Summarize these symptoms and identify if more information is needed.
+
+2. Candidate Disease Recall: List the top 3-5 potential diseases that align with the patient's condition. Use confidence scores to rank the likelihood of each disease.
+
+3. Diagnostic Reasoning: Explain the reasoning behind each diagnosis. Highlight why certain diseases are more likely based on the patient's symptoms.
+
+4. Symptom Inquiry (if needed): If the confidence scores are low or there is diagnostic uncertainty, ask a follow-up question to gather additional relevant symptoms.
+
+5. Confidence Assessment and Diagnosis: Based on the patient's response, update the confidence levels of each potential disease. If the confidence exceeds a threshold (e.g., 55%), provide a diagnosis.
+
+Present your findings in the following format:
+
+<output>
+Patient Information:
+{{patient_info}}
+
+Step 1: Symptom Abstraction
+[Summarize the patient's symptoms]
+
+Step 2: Candidate Disease Recall
+[List top 3-5 potential diseases with confidence scores]
+
+Step 3: Diagnostic Reasoning
+[Explain reasoning for each potential diagnosis]
+
+Step 4: Symptom Inquiry (if needed)
+[Ask a follow-up question if necessary]
+
+Step 5: Confidence Assessment and Diagnosis
+[Provide updated confidence levels and final diagnosis]
+
+Final Diagnosis and Treatment Recommendation:
+[State the final diagnosis and suggest a treatment plan]
+
+</output>
+
+Maintain a professional tone throughout your response, and provide detailed medical reasoning suitable for a physician audience.`;
+
+            const messages = [
+                { "role": "system", "content": systemMessage },
+                { "role": "user", "content": `Patient Information: ${userInput}` }
+            ];
+
+            const headers = {
+                "Authorization": `Bearer ${PERPLEXITY_API_KEY}`,
+                "Content-Type": "application/json"
+            };
+
+            const payload = {
+                "model": "llama-3.1-sonar-large-128k-online",
+                "messages": messages
+            };
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                return data.choices[0].message.content;
+            } catch (error) {
+                console.error('Error:', error);
+                throw new Error('Failed to get response from Perplexity API');
+            }
+        }
+
+        function displayResults(response) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<h2>Suggested Tools:</h2>';
+
+            // Use marked to convert markdown to HTML
+            const htmlContent = marked.parse(response);
+            
+            // Create a new div to hold the parsed HTML content
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'markdown-content';
+            contentDiv.innerHTML = htmlContent;
+
+            resultDiv.appendChild(contentDiv);
+        }
+    </script>
+</body>
+</html>
